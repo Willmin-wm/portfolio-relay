@@ -1,7 +1,7 @@
 services:
   # Web service — relay API + /run-alert endpoint
   - type: web
-    name: will-portfolio-relay
+    name: portfolio-relay
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
@@ -12,6 +12,10 @@ services:
         value: "787324774"
       - key: RELAY_API_KEY
         value: will-portfolio-2026
+      - key: WA_PHONE
+        value: "16282935371"
+      - key: WA_APIKEY
+        value: "8937649"
 
   # Cron job — 7:00 AM PST (15:00 UTC) weekdays
   - type: cron
@@ -21,8 +25,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: >
       python -c "
-      import urllib.request, urllib.parse, json;
-      url='https://will-portfolio-relay.onrender.com/run-alert?key=will-portfolio-2026';
+      import urllib.request, json;
+      url='https://portfolio-relay.onrender.com/run-alert?key=will-portfolio-2026';
       r=urllib.request.urlopen(url, timeout=30);
       print(r.read().decode())
       "
@@ -39,7 +43,7 @@ services:
     startCommand: >
       python -c "
       import urllib.request, json;
-      url='https://will-portfolio-relay.onrender.com/run-alert?key=will-portfolio-2026';
+      url='https://portfolio-relay.onrender.com/run-alert?key=will-portfolio-2026';
       r=urllib.request.urlopen(url, timeout=30);
       print(r.read().decode())
       "
