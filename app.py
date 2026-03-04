@@ -8,11 +8,9 @@ import pytz
 
 app = Flask(__name__)
 
-BOT_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "8514182866:AAF87qphDkIA_Qn0Fh6UVmChC_00Pgm3ML8")
-CHAT_ID        = os.environ.get("TELEGRAM_CHAT_ID",  "787324774")
-API_KEY        = os.environ.get("RELAY_API_KEY",     "will-portfolio-2026")
-WA_PHONE       = os.environ.get("WA_PHONE",          "16282935371")
-WA_APIKEY      = os.environ.get("WA_APIKEY",         "8937649")
+API_KEY   = os.environ.get("RELAY_API_KEY", "will-portfolio-2026")
+WA_PHONE  = os.environ.get("WA_PHONE",      "16282935371")
+WA_APIKEY = os.environ.get("WA_APIKEY",     "8937649")
 
 # Portfolio holdings: ticker -> (shares, ref_price)
 HOLDINGS = {
@@ -43,40 +41,23 @@ HOLDINGS = {
 
 ALERT_THRESHOLD = 0.05  # 5%
 
-# ── Messaging ────────────────────────────────────────────────
 
-def send_telegram(text):
-    url  = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = urllib.parse.urlencode({
-        "chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"
-    }).encode()
-    with urllib.request.urlopen(
-        urllib.request.Request(url, data=data), timeout=15
-    ) as r:
-        return json.loads(r.read())
-
+# ── WhatsApp ─────────────────────────────────────────────────
 
 def send_whatsapp(text):
-    """Send a message via CallMeBot WhatsApp API (free, personal accounts)."""
-    if not WA_PHONE or not WA_APIKEY:
-        return {"skipped": "WA_PHONE or WA_APIKEY not configured"}
     encoded = urllib.parse.quote(text)
     url = (
         f"https://api.callmebot.com/whatsapp.php"
         f"?phone={WA_PHONE}&text={encoded}&apikey={WA_APIKEY}"
     )
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as r:
-            return {"ok": True, "response": r.read().decode()}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return {"ok": True, "response": r.read().decode()}
 
 
 # ── Price fetching ───────────────────────────────────────────
 
 def fetch_prices(tickers):
-    """Fetch current prices from Yahoo Finance query API."""
     prices = {}
     batch_size = 10
     ticker_list = list(tickers)
@@ -104,10 +85,9 @@ def fetch_prices(tickers):
 
 # ── Message builder ──────────────────────────────────────────
 
-def build_alert_message(prices, session_label, plain_text=False):
-    """Build formatted alert message. plain_text=True for WhatsApp (no HTML tags)."""
-    pst     = pytz.timezone("America/Los_Angeles")
-    now_pst = datetime.now(pst)
+def build_alert_message(prices, session_label):
+    pst      = pytz.timezone("America/Los_Angeles")
+    now_pst  = datetime.now(pst)
     date_str = now_pst.strftime("%a %b %-d, %Y | %-I:%M %p PST")
 
     alerts, movers = [], []
@@ -124,17 +104,11 @@ def build_alert_message(prices, session_label, plain_text=False):
             movers.append((ticker, pct, cur_price, cur_val))
             if abs(pct) >= ALERT_THRESHOLD:
                 arrow = "🔺" if pct > 0 else "🔻"
-                dollar_impact = (cur_val - ref_val)
-                if plain_text:
-                    alerts.append(
-                        f"{arrow} {ticker}: {pct:+.1%} -> ${cur_price:.2f} "
-                        f"(Impact: ${dollar_impact:+,.0f})"
-                    )
-                else:
-                    alerts.append(
-                        f"{arrow} <b>{ticker}</b>: {pct:+.1%} → ${cur_price:.2f} "
-                        f"(Portfolio impact: ${dollar_impact:+,.0f})"
-                    )
+                dollar_impact = cur_val - ref_val
+                alerts.append(
+                    f"{arrow} {ticker}: {pct:+.1%} -> ${cur_price:.2f} "
+                    f"(Impact: ${dollar_impact:+,.0f})"
+                )
         else:
             total_current += ref_val
 
@@ -146,93 +120,54 @@ def build_alert_message(prices, session_label, plain_text=False):
     daily_change_pct = (daily_change / total_ref * 100) if total_ref else 0
 
     sep = "──────────────────"
+    lines = [
+        f"📊 Portfolio Alert",
+        f"{date_str}",
+        f"{session_label}",
+        sep,
+    ]
 
-    if plain_text:
-        lines = [
-            f"📊 Portfolio Alert — {date_str}",
-            f"{session_label}",
-            "",
-            sep,
-        ]
-        lines += (["🔔 ALERTS (>5% Move)"] + alerts) if alerts else ["🔔 ALERTS", "✅ No positions breached ±5% today"]
-        lines += ["", sep, "📈 Top Gainers"]
-        for t, pct, price, _ in top5_gain:
-            lines.append(f"  ✅ {t}: {pct:+.2%} -> ${price:.2f}")
-        lines += ["", "📉 Top Losers"]
-        for t, pct, price, _ in top5_loss:
-            lines.append(f"  🔻 {t}: {pct:+.2%} -> ${price:.2f}")
-        lines += [
-            "", sep,
-            f"💰 Est. Portfolio Value",
-            f"  ${total_current:,.0f} ({daily_change_pct:+.1f}% today, ${daily_change:+,.0f})",
-            f"  15% quarterly target: ${total_ref * 1.15:,.0f}",
-            "", sep,
-            "📅 Upcoming Catalysts",
-            "  • NVDA GTC Conference: Mar 17-21",
-            "  • MU Earnings: ~Mar 26",
-            "  • AMZN / GOOG Q1 Earnings: late Apr",
-            "",
-            "— Will's Portfolio Bot 🤖",
-        ]
+    if alerts:
+        lines += ["🔔 ALERTS (>5% Move)"] + alerts
     else:
-        lines = [
-            f"📊 <b>Portfolio Alert — {date_str}</b>",
-            f"<i>{session_label}</i>",
-            "",
-            "━━━━━━━━━━━━━━━━━━",
-        ]
-        lines += (["🔔 <b>ALERTS (&gt;5% Move)</b>"] + alerts) if alerts else ["🔔 <b>ALERTS</b>", "✅ No positions breached ±5% today"]
-        lines += ["", "━━━━━━━━━━━━━━━━━━", "📈 <b>Top Gainers</b>"]
-        for t, pct, price, _ in top5_gain:
-            lines.append(f"  ✅ {t}: {pct:+.2%} → ${price:.2f}")
-        lines += ["", "📉 <b>Top Losers</b>"]
-        for t, pct, price, _ in top5_loss:
-            lines.append(f"  🔻 {t}: {pct:+.2%} → ${price:.2f}")
-        lines += [
-            "",
-            "━━━━━━━━━━━━━━━━━━",
-            f"💰 <b>Est. Portfolio Value</b>",
-            f"  ${total_current:,.0f} ({daily_change_pct:+.1f}% today, {daily_change:+,.0f}$)",
-            f"  15% quarterly target: ${total_ref * 1.15:,.0f}",
-            "",
-            "━━━━━━━━━━━━━━━━━━",
-            "📅 <b>Upcoming Catalysts</b>",
-            "  • NVDA GTC Conference: Mar 17–21",
-            "  • MU Earnings: ~Mar 26",
-            "  • AMZN / GOOG Q1 Earnings: late Apr",
-            "",
-            "— Will's Portfolio Bot 🤖",
-        ]
+        lines += ["🔔 ALERTS", "✅ No positions breached +-5% today"]
 
+    lines += ["", sep, "📈 Top Gainers"]
+    for t, pct, price, _ in top5_gain:
+        lines.append(f"  {t}: {pct:+.2%} -> ${price:.2f}")
+
+    lines += ["", "📉 Top Losers"]
+    for t, pct, price, _ in top5_loss:
+        lines.append(f"  {t}: {pct:+.2%} -> ${price:.2f}")
+
+    lines += [
+        "",
+        sep,
+        f"💰 Portfolio Value",
+        f"  ${total_current:,.0f} ({daily_change_pct:+.1f}% today)",
+        f"  Daily P&L: ${daily_change:+,.0f}",
+        f"  15% target: ${total_ref * 1.15:,.0f}",
+        "",
+        sep,
+        "📅 Upcoming Catalysts",
+        "  NVDA GTC: Mar 17-21",
+        "  MU Earnings: ~Mar 26",
+        "  AMZN/GOOG Q1: late Apr",
+        "",
+        "-- Will's Portfolio Bot",
+    ]
     return "\n".join(lines)
 
 
-# ── Routes ──────────────────────────────────────────────────
+# ── Routes ───────────────────────────────────────────────────
 
 @app.route("/", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "service": "Will Portfolio Relay v3 (Telegram + WhatsApp)"})
-
-
-@app.route("/send", methods=["POST"])
-def send():
-    if request.headers.get("X-API-Key") != API_KEY:
-        return jsonify({"error": "unauthorized"}), 401
-    body = request.get_json(silent=True) or {}
-    text = body.get("message", "").strip()
-    if not text:
-        return jsonify({"error": "missing 'message' field"}), 400
-    try:
-        tg = send_telegram(text)
-        wa = send_whatsapp(text)
-        return jsonify({"ok": True, "telegram": tg, "whatsapp": wa})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"status": "ok", "service": "Will Portfolio Alert (WhatsApp)"})
 
 
 @app.route("/run-alert", methods=["GET"])
 def run_alert():
-    """Self-contained endpoint: fetch prices, build messages, send to Telegram + WhatsApp."""
     if request.args.get("key") != API_KEY:
         return jsonify({"error": "unauthorized"}), 401
 
@@ -240,24 +175,11 @@ def run_alert():
     hour_pst = datetime.now(pst).hour
     session  = "Pre-Market Check" if hour_pst < 12 else "Mid-Day Check"
 
-    errors = {}
     try:
-        prices = fetch_prices(list(HOLDINGS.keys()))
-
-        # Telegram (HTML formatted)
-        tg_msg    = build_alert_message(prices, session, plain_text=False)
-        tg_result = send_telegram(tg_msg)
-
-        # WhatsApp (plain text)
-        wa_msg    = build_alert_message(prices, session, plain_text=True)
-        wa_result = send_whatsapp(wa_msg)
-
-        return jsonify({
-            "ok": True,
-            "prices_fetched": len(prices),
-            "telegram": tg_result,
-            "whatsapp": wa_result,
-        })
+        prices  = fetch_prices(list(HOLDINGS.keys()))
+        message = build_alert_message(prices, session)
+        result  = send_whatsapp(message)
+        return jsonify({"ok": True, "prices_fetched": len(prices), "whatsapp": result})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
