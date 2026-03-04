@@ -1,4 +1,5 @@
 services:
+  # Web service — relay API + /run-alert endpoint
   - type: web
     name: will-portfolio-relay
     runtime: python
@@ -11,3 +12,37 @@ services:
         value: "787324774"
       - key: RELAY_API_KEY
         value: will-portfolio-2026
+
+  # Cron job — 7:00 AM PST (15:00 UTC) weekdays
+  - type: cron
+    name: portfolio-alert-morning
+    runtime: python
+    schedule: "0 15 * * 1-5"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      python -c "
+      import urllib.request, urllib.parse, json;
+      url='https://will-portfolio-relay.onrender.com/run-alert?key=will-portfolio-2026';
+      r=urllib.request.urlopen(url, timeout=30);
+      print(r.read().decode())
+      "
+    envVars:
+      - key: DUMMY
+        value: "1"
+
+  # Cron job — 1:00 PM PST (21:00 UTC) weekdays
+  - type: cron
+    name: portfolio-alert-midday
+    runtime: python
+    schedule: "0 21 * * 1-5"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      python -c "
+      import urllib.request, json;
+      url='https://will-portfolio-relay.onrender.com/run-alert?key=will-portfolio-2026';
+      r=urllib.request.urlopen(url, timeout=30);
+      print(r.read().decode())
+      "
+    envVars:
+      - key: DUMMY
+        value: "1"
