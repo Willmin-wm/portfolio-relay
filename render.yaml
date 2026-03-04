@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: will-portfolio-relay
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        value: 8514182866:AAF87qphDkIA_Qn0Fh6UVmChC_00Pgm3ML8
+      - key: TELEGRAM_CHAT_ID
+        value: "787324774"
+      - key: RELAY_API_KEY
+        value: will-portfolio-2026
