@@ -3,7 +3,7 @@ services:
     name: portfolio-relay
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn app:app --timeout 120 --workers 1
     envVars:
       - key: RELAY_API_KEY
         value: will-portfolio-2026
